@@ -1,0 +1,16 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+# 2.0.52 fixes Python 3.14 typing compatibility used by mapped optional columns.
+sqlalchemy==2.0.52
+# 2.12+ ships a prebuilt pydantic-core wheel for CPython 3.14 on Windows.
+pydantic==2.12.5
+email-validator==2.2.0
+pydantic-settings==2.9.1
+python-jose[cryptography]==3.4.0
+cryptography==46.0.6
+httpx==0.28.1
+python-multipart==0.0.20
+radon==6.0.1
+bandit==1.8.3
+PyYAML==6.0.3
+pytest==8.3.5

@@ -1,0 +1,26 @@
+import {useEffect, useMemo, useState} from 'react';
+import {Activity, CheckCircle2, FileSearch, Search, ShieldAlert, Sparkles} from 'lucide-react';
+import {Link} from 'react-router-dom';
+import {api} from '../lib/api';
+import {PageHeader, Shell} from '../components/Shell';
+import type {Finding} from '../types';
+
+export function Scans() {
+  const [data,setData]=useState<any[]>([]);
+  useEffect(()=>{api<any[]>('/scans').then(setData);},[]);
+  return <Shell><PageHeader kicker="SCAN HISTORY / DATABASE" title="Every review, traceable"/><section className="history-telemetry"><span><small>TOTAL SCANS</small><b>{data.length}</b></span><span><small>COMPLETE</small><b>{data.filter(x=>x.status==='COMPLETED').length}</b></span><span><small>FAILED</small><b>{data.filter(x=>x.status==='FAILED').length}</b></span><span><small>PROCESSING</small><b>{data.filter(x=>!['COMPLETED','FAILED'].includes(x.status)).length}</b></span></section><section className="glass dense-table"><div className="table-head"><span>SCAN / SOURCE</span><span>LANGUAGE</span><span>INPUT</span><span>STATUS</span><span>TIME</span></div>{data.map(scan=><Link to={scan.status==='COMPLETED'?`/app/scans/${scan.id}`:`/app/scans/${scan.id}/processing`} key={scan.id}><FileSearch/><span><b>{scan.filename}</b><small>{scan.id.slice(0,8)}</small></span><em>{scan.language}</em><em>{scan.input_type}</em><strong className={scan.status.toLowerCase()}>{scan.status}</strong><small>{new Date(scan.created_at).toLocaleString()}</small></Link>)}{!data.length&&<div className="table-empty"><FileSearch/><b>No scans yet</b><span>Start a review to create the first real record.</span></div>}</section></Shell>;
+}
+
+export function Findings() {
+  const [data,setData]=useState<Finding[]>([]); const [query,setQuery]=useState(''); const [severity,setSeverity]=useState('all'); const [active,setActive]=useState<Finding>();
+  useEffect(()=>{api<Finding[]>('/findings').then(items=>{setData(items);setActive(items[0]);});},[]);
+  const counts=useMemo(()=>Object.fromEntries(['critical','high','medium','low'].map(key=>[key,data.filter(x=>x.severity===key).length])),[data]);
+  const filtered=data.filter(item=>(severity==='all'||item.severity===severity)&&(`${item.title} ${item.rule_id}`.toLowerCase().includes(query.toLowerCase())));
+  return <Shell><PageHeader kicker="FINDINGS CONSOLE / REAL EVIDENCE" title="Inspect signals across scans"/><section className="history-telemetry">{[['TOTAL',data.length],['CRITICAL',counts.critical],['HIGH',counts.high],['MEDIUM',counts.medium],['LOW',counts.low],['REVIEWED',data.filter(x=>x.status!=='OPEN').length]].map(([key,value]:any)=><span key={key}><small>{key}</small><b>{value}</b></span>)}</section><div className="finding-console"><section className="glass finding-table"><div className="console-filters"><label><Search/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search findings or rules"/></label><select value={severity} onChange={e=>setSeverity(e.target.value)}><option value="all">All severity</option><option>critical</option><option>high</option><option>medium</option><option>low</option></select></div>{filtered.map(item=><button className={active?.id===item.id?'active':''} onClick={()=>setActive(item)} key={item.id}><i className={`severity-dot ${item.severity}`}/><span><b>{item.title}</b><small>{item.rule_id} · line {item.line}</small></span><em>{item.category}</em><strong>{item.status}</strong></button>)}{!filtered.length&&<div className="table-empty"><ShieldAlert/><b>No matching evidence</b></div>}</section>{active&&<aside className="glass finding-side"><small>SEC/EVIDENCE</small><span className={`severity-badge ${active.severity}`}>{active.severity}</span><h3>{active.title}</h3><code>{active.excerpt}</code><p>{active.evidence}</p><hr/><small>AI/CONTEXT</small><h4>{active.ai_explanation?.summary}</h4><p>{active.ai_explanation?.recommendation}</p><em>{active.ai_explanation?.limitations}</em></aside>}</div></Shell>;
+}
+
+export function Audit() {
+  const [data,setData]=useState<any[]>([]); useEffect(()=>{api<any[]>('/audit').then(setData);},[]);
+  const decisionCount=data.filter(item=>['ACCEPT','DISMISS','ESCALATE','REMEDIATION'].some(value=>item.action.includes(value))).length;
+  return <Shell><PageHeader kicker="AUDIT TRAIL / IMMUTABLE EVENTS" title="Developer decisions, preserved"/><section className="history-telemetry"><span><small>EVENTS</small><b>{data.length}</b></span><span><small>DECISIONS</small><b>{decisionCount}</b></span><span><small>SYSTEM EVENTS</small><b>{data.length-decisionCount}</b></span></section><section className="audit-console"><div className="audit-line"/>{data.map((event,index)=><article key={event.id}><div className="audit-node">{event.action.includes('SCAN')?<Activity/>:event.action.includes('FIX')?<Sparkles/>:<CheckCircle2/>}</div><div className="glass"><small>{String(data.length-index).padStart(3,'0')} · {new Date(event.created_at).toLocaleString()}</small><h3>{event.action.replaceAll('_',' ')}</h3><p>{event.rationale||'System-generated lifecycle event.'}</p><span>{event.finding_id?`FINDING ${event.finding_id.slice(0,8)}`:'SCAN LIFECYCLE'}</span></div></article>)}{!data.length&&<div className="table-empty"><Activity/><b>No audit events yet</b></div>}</section></Shell>;
+}
