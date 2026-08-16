@@ -88,6 +88,10 @@ SQLite is the zero-configuration default. Set `DATABASE_URL` to a PostgreSQL con
 
 The automated backend suite covers auth ownership, queued progress, secret redaction, a real finding, fix preview/application, working-copy verification, artifact download, Python syntax line reporting, and ZIP traversal rejection.
 
+## Railway backend deployment
+
+Create a Railway service with `backend` as its Root Directory. Railway will detect `backend/Dockerfile` and `backend/railway.json`; the container binds to Railway's injected `PORT` and uses `/health` as its deployment healthcheck. Set `DATABASE_URL`, `JWT_SECRET`, `FRONTEND_URL`, and optionally the three `OPENROUTER_*` variables. PostgreSQL URLs using either `postgres://` or `postgresql://` are normalized to SQLAlchemy's Psycopg 3 driver.
+
 ## Honest limitations
 
 - Static validators do not prove runtime exploitability or correctness.

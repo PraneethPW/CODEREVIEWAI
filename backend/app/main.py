@@ -17,7 +17,9 @@ from .services.ingestion import SourceFile, decode_source, extract_zip, MAX_FILE
 def utc_now()->datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
-DB=os.getenv("DATABASE_URL","sqlite:///./codereview.db").replace("postgresql://","postgresql+psycopg://")
+DB=os.getenv("DATABASE_URL","sqlite:///./codereview.db")
+if DB.startswith("postgres://"): DB=DB.replace("postgres://","postgresql+psycopg://",1)
+elif DB.startswith("postgresql://"): DB=DB.replace("postgresql://","postgresql+psycopg://",1)
 engine=create_engine(DB, connect_args={"check_same_thread":False} if DB.startswith("sqlite") else {})
 SessionLocal=sessionmaker(engine, expire_on_commit=False)
 class Base(DeclarativeBase): pass

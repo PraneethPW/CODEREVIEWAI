@@ -2,6 +2,7 @@ fastapi==0.115.12
 uvicorn[standard]==0.34.2
 # 2.0.52 fixes Python 3.14 typing compatibility used by mapped optional columns.
 sqlalchemy==2.0.52
+psycopg[binary]==3.3.4
 # 2.12+ ships a prebuilt pydantic-core wheel for CPython 3.14 on Windows.
 pydantic==2.12.5
 email-validator==2.2.0
