@@ -22,6 +22,7 @@ export function Shell({children}: {children: ReactNode}) {
       <button className="logout" onClick={() => {localStorage.removeItem('cra_token'); navigate('/');}}><LogOut size={17}/> Logout</button>
     </aside>
     <div className="app-content">{children}</div>
+    <nav className="mobile-dock" aria-label="Application navigation">{links.map(([to, label, Icon]) => <Link className={location.pathname === to ? 'active' : ''} key={to} to={to}><Icon size={18}/><span>{label.replace('Command center','Home').replace('New review','Review')}</span></Link>)}</nav>
   </div>;
 }
 

@@ -21,6 +21,7 @@ const demoSignals = [
 ];
 
 export function Landing() {
+  const [previewTab, setPreviewTab] = useState<'findings'|'code'|'review'>('code');
   return <main className="landing-v2">
     <nav><Link className="brand" to="/"><Code2/> CODE<span>REVIEW</span></Link><span/><Link to="/login">Sign in</Link><Link className="mini" to="/login">Initialize review <ArrowRight size={14}/></Link></nav>
     <section className="cockpit">
@@ -45,7 +46,7 @@ export function Landing() {
       <article className="severity-matrix"><small>SEVERITY MATRIX · DEMO</small>{[['CRITICAL',2],['HIGH',5],['MEDIUM',11],['LOW',8]].map(([x,v]:any)=><p key={x}><b>{x}</b><i style={{width:`${v*6}%`}}/><span>{String(v).padStart(2,'0')}</span></p>)}</article>
     </div></section>
     <section className="workflow-story"><p className="eyebrow">PRODUCT WORKFLOW / REAL CAPABILITY</p><h2>One controlled path from source to safer code.</h2><div className="workflow-nodes">{[[FileCode2,'UPLOAD','Single, multiple, or ZIP'],[Activity,'ANALYSE','Syntax, security, quality'],[BrainCircuit,'EXPLAIN','Grounded in exact evidence'],[ShieldAlert,'FIX','Preview before applying'],[CheckCircle2,'VERIFY','Re-run static validators']].map(([Icon,title,copy]:any)=><article key={title}><Icon/><small>SYS/{title}</small><b>{title}</b><span>{copy}</span></article>)}</div></section>
-    <section className="review-preview"><div className="section-title"><p className="eyebrow">WORKSPACE PREVIEW / DEMO</p><h2>Inspect code like technical evidence.</h2></div><div className="preview-console"><aside><b>FINDINGS / 03</b><span className="selected">HIGH · SQL construction</span><span>HIGH · Unsafe eval</span><span>MED · Broad exception</span></aside><pre><mark>6  query = "SELECT *" + user</mark>{'\n'}7  return eval(user)</pre><section><small>SEC/RULE</small><h3>SQL construction</h3><p>Data and query structure are combined on line 6.</p><button>GENERATE FIX</button></section></div></section>
+    <section className="review-preview"><div className="section-title"><p className="eyebrow">WORKSPACE PREVIEW / DEMO</p><h2>Inspect code like technical evidence.</h2></div><div className="preview-mobile-tabs" role="tablist" aria-label="Workspace demonstration views">{(['findings','code','review'] as const).map(tab=><button aria-selected={previewTab===tab} className={previewTab===tab?'active':''} onClick={()=>setPreviewTab(tab)} key={tab}>{tab}</button>)}</div><div className="preview-console"><aside className={previewTab==='findings'?'mobile-active':''}><b>FINDINGS / 03</b><span className="selected">HIGH · SQL construction</span><span>HIGH · Unsafe eval</span><span>MED · Broad exception</span></aside><pre className={previewTab==='code'?'mobile-active':''}><mark>6  query = "SELECT *" + user</mark>{'\n'}7  return eval(user)</pre><section className={previewTab==='review'?'mobile-active':''}><small>SEC/RULE</small><h3>SQL construction</h3><p>Data and query structure are combined on line 6.</p><button>GENERATE FIX</button></section></div></section>
     <section className="engine-cta"><div className="cta-core"><Gauge/><i/><i/></div><p className="eyebrow">STATIC / SECURITY / AI CONTEXT / HUMAN REVIEW</p><h2>READY TO REVIEW</h2><Link className="cta" to="/login">INITIALIZE REVIEW <ArrowRight/></Link></section>
   </main>;
 }
