@@ -67,6 +67,7 @@ export function NewReview() {
     if ((mode === 'paste' || mode === 'file') && !source.trim()) return setError('Add source code before starting the review.');
     if ((mode === 'project' || mode === 'zip') && !files.length) return setError('Choose source files or a ZIP archive first.');
     setBusy(true); setError('');
+    const launchStartedAt=Date.now();
     try {
       let result: any;
       if (mode === 'paste' || mode === 'file') {
@@ -76,6 +77,8 @@ export function NewReview() {
         files.forEach(file => data.append('uploads', file, (file as any).webkitRelativePath || file.name));
         result = await api('/import/project/start', {method:'POST',body:data});
       }
+      const remainingLaunchTime=Math.max(0,1_200-(Date.now()-launchStartedAt));
+      if (remainingLaunchTime) await new Promise(resolve=>window.setTimeout(resolve,remainingLaunchTime));
       navigate(`/app/scans/${result.id}/processing`);
     } catch (caught:any) {setBusy(false);setError(caught.message);}
   };
