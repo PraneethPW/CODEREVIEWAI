@@ -1,3 +1,29 @@
+export type OwaspMapping = {
+  edition: '2025';
+  category_id: string;
+  category_name: string;
+  cwe_ids: string[];
+  coverage: 'limited_static';
+  reference_url: string;
+};
+
+export type OwaspCategory = {
+  category_id: string;
+  category_name: string;
+  summary: string;
+  reference_url: string;
+  coverage: 'limited_static' | 'not_assessed';
+  finding_count: number;
+  supported_rules: string[];
+};
+
+export type OwaspSummary = {
+  edition: '2025';
+  mapped_findings: number;
+  disclaimer: string;
+  categories: OwaspCategory[];
+};
+
 export type Finding = {
   id: string;
   rule_id: string;
@@ -9,6 +35,7 @@ export type Finding = {
   evidence: string;
   status: string;
   ai_explanation: Record<string, string>;
+  owasp: OwaspMapping | null;
 };
 
 export type ScanFile = {path: string; lines: number; content: string};
@@ -21,6 +48,7 @@ export type Scan = {
   total_lines: number;
   files: ScanFile[];
   findings: Finding[];
+  owasp: OwaspSummary;
 };
 
 export type ScanEvent = {

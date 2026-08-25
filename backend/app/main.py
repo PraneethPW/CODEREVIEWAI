@@ -11,7 +11,7 @@ from jose import jwt, JWTError
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import create_engine, String, Text, DateTime, ForeignKey, Integer, JSON, select, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session, relationship, sessionmaker
-from .analysis import analyze_source
+from .analysis import analyze_source, owasp_for_rule, owasp_summary
 from .services.ingestion import SourceFile, decode_source, extract_zip, MAX_FILES
 
 def utc_now()->datetime:
@@ -88,7 +88,20 @@ def redact_text(value:str)->str:
     return re.sub(r"(?i)(authorization\s*:\s*bearer\s+)[A-Za-z0-9._~-]+",r"\1***REDACTED***",value)
 def redact_payload(payload:dict)->dict:
     return {key:(redact_text(value) if isinstance(value,str) else value) for key,value in payload.items()}
-def serialize_finding(f): return {"id":f.id,"rule_id":f.rule_id,"title":f.title,"category":f.category,"severity":f.severity,"line":f.line,"excerpt":redact_text(f.excerpt),"evidence":redact_text(f.evidence),"status":f.status,"ai_explanation":redact_payload(f.ai_explanation or {})}
+def serialize_finding(f):
+    return {
+        "id":f.id,
+        "rule_id":f.rule_id,
+        "title":f.title,
+        "category":f.category,
+        "severity":f.severity,
+        "line":f.line,
+        "excerpt":redact_text(f.excerpt),
+        "evidence":redact_text(f.evidence),
+        "status":f.status,
+        "ai_explanation":redact_payload(f.ai_explanation or {}),
+        "owasp":owasp_for_rule(f.rule_id),
+    }
 def explain(f:Finding):
     fixes={
         "PY-UNSAFE-EVAL":"Parse the expected input format instead of executing it; use ast.literal_eval only for trusted Python literals.",
@@ -99,6 +112,17 @@ def explain(f:Finding):
         "JS-DOM-SINK":"Avoid raw HTML, or sanitise with a reviewed HTML sanitiser before rendering.",
         "PY-BARE-EXCEPT":"Catch the expected exception types and re-raise or log unexpected failures.",
         "PY-MUTABLE-DEFAULT":"Use None as the default and construct a new list or dictionary inside the function.",
+        "GEN-PATH-TRAVERSAL":"Resolve the requested path against an allow-listed base directory, canonicalise it, and reject paths that escape that boundary.",
+        "PY-DEBUG-ENABLED":"Keep debug mode disabled by default and enable it only through an explicit local-development configuration.",
+        "GEN-TLS-VERIFY-DISABLED":"Restore certificate and hostname verification; configure a trusted CA bundle instead of bypassing TLS checks.",
+        "JS-CORS-WILDCARD-CREDENTIALS":"Allow only explicit trusted origins when credentials are enabled and validate the response headers in integration tests.",
+        "JSON-UNPINNED-DEPENDENCY":"Pin the dependency to a reviewed version or immutable revision and commit the generated lockfile.",
+        "YAML-FLOATING-ACTION":"Pin the workflow action to a reviewed immutable commit SHA and use an update process to advance it.",
+        "GEN-WEAK-HASH":"Use a modern password hashing function for passwords or SHA-256/SHA-3 where a collision-resistant digest is required.",
+        "GEN-JWT-NO-VERIFY":"Verify the signature, issuer, audience, algorithm allow-list, and expiry before trusting token claims.",
+        "GEN-UNSAFE-DESERIALIZATION":"Use a data-only format with schema validation, or strictly allow-list types before crossing the trust boundary.",
+        "GEN-SENSITIVE-LOGGING":"Remove credentials and tokens from logs; record a non-sensitive event identifier and necessary operational context instead.",
+        "GEN-SWALLOWED-EXCEPTION":"Handle the expected failure explicitly and either recover safely, report it, or propagate it to the correct boundary.",
     }; recommendation=fixes.get(f.rule_id,"Replace the risky pattern with a constrained, explicit API and validate untrusted input.")
     return redact_payload({"finding_id":f.id,"summary":f"{f.title} at line {f.line}.","why_it_matters":f.evidence,"recommendation":recommendation,"safer_pattern":recommendation,"limitations":"This is deterministic guidance; confirm runtime data flow before treating it as exploitable."})
 def reviewed_source(source:str, findings:list[Finding], language:str)->str:
@@ -179,7 +203,7 @@ async def grounded_explanation(f:Finding)->dict:
     if not key: return fallback
     prompt=("Return JSON only matching: finding_id, summary, why_it_matters, recommendation, safer_pattern, limitations. "
             "Do not invent vulnerabilities, lines, packages, or exploitability. Base every statement only on this detector evidence: "
-            +json.dumps(redact_payload({"finding_id":f.id,"title":f.title,"rule":f.rule_id,"line":f.line,"excerpt":f.excerpt,"evidence":f.evidence})))
+            +json.dumps(redact_payload({"finding_id":f.id,"title":f.title,"rule":f.rule_id,"line":f.line,"excerpt":f.excerpt,"evidence":f.evidence,"owasp":owasp_for_rule(f.rule_id)})))
     payload={"model":os.getenv("OPENROUTER_MODEL","openrouter/free"),"messages":[{"role":"system","content":"You are a careful code review explainer. You do not create findings."},{"role":"user","content":prompt}],"response_format":{"type":"json_object"}}
     for _ in range(2):
         try:
@@ -242,7 +266,7 @@ async def process_queued_scan(scan_id:str)->None:
             languages=sorted({language for _,language,_ in analysed})
             scan.language=languages[0] if len(languages)==1 else "mixed"
             record_event(s,scan,"PARSE","PASSED","Syntax validators completed",{"languages":languages})
-            scan.status="STATIC_ANALYSIS"; record_event(s,scan,"STATIC_RULES","RUNNING","Running security, quality, complexity and reliability rules")
+            scan.status="STATIC_ANALYSIS"; record_event(s,scan,"STATIC_RULES","RUNNING","Running security, OWASP-mapped, quality, complexity and reliability rules")
             existing=list(s.scalars(select(Finding).where(Finding.scan_id==scan.id)))
             for finding in existing: s.delete(finding)
             for path,_,signals in analysed:
@@ -250,7 +274,8 @@ async def process_queued_scan(scan_id:str)->None:
                     s.add(Finding(scan_id=scan.id,rule_id=signal.rule_id,title=signal.title,category=signal.category,severity=signal.severity,line=signal.line,excerpt=signal.excerpt,evidence=(f"{path} — {signal.message}" if len(files)>1 else signal.message)))
             s.commit()
             findings_for_scan=list(s.scalars(select(Finding).where(Finding.scan_id==scan.id)))
-            record_event(s,scan,"STATIC_RULES","PASSED","Deterministic rule engine completed",{"files_checked":len(files),"signals":len(findings_for_scan)})
+            mapped_count=sum(owasp_for_rule(finding.rule_id) is not None for finding in findings_for_scan)
+            record_event(s,scan,"STATIC_RULES","PASSED","Deterministic rule engine completed",{"files_checked":len(files),"signals":len(findings_for_scan),"owasp_mapped":mapped_count})
             scan.status="RANKING"; record_event(s,scan,"RANK","RUNNING","Ranking evidence by severity and confidence")
             record_event(s,scan,"RANK","PASSED","Finding priorities prepared",{"findings":len(findings_for_scan)})
             scan.status="AI_CONTEXT"; record_event(s,scan,"AI_CONTEXT","RUNNING","Generating explanations grounded in detector evidence")
@@ -406,7 +431,8 @@ def one_scan(scan_id:str,u:User=Depends(me),s:Session=Depends(db)):
     if not x: raise HTTPException(404,"Scan not found")
     files=working_files(x,s)
     first_name,first_source=next(iter(files.items()))
-    return {"id":x.id,"status":x.status,"source":first_source,"filename":first_name,"files":[{"path":p,"lines":len(c.splitlines()),"content":c} for p,c in files.items()],"total_lines":sum(len(c.splitlines()) for c in files.values()),"language":x.language,"findings":[serialize_finding(f) for f in s.scalars(select(Finding).where(Finding.scan_id==x.id))]}
+    scan_findings=list(s.scalars(select(Finding).where(Finding.scan_id==x.id)))
+    return {"id":x.id,"status":x.status,"source":first_source,"filename":first_name,"files":[{"path":p,"lines":len(c.splitlines()),"content":c} for p,c in files.items()],"total_lines":sum(len(c.splitlines()) for c in files.values()),"language":x.language,"findings":[serialize_finding(f) for f in scan_findings],"owasp":owasp_summary(f.rule_id for f in scan_findings)}
 @app.get("/api/v1/scans/{scan_id}/reviewed-file")
 def download_reviewed_file(scan_id:str,u:User=Depends(me),s:Session=Depends(db)):
     scan=s.scalar(select(Scan).where(Scan.id==scan_id,Scan.user_id==u.id))
@@ -431,6 +457,16 @@ def scan_findings(scan_id:str,u:User=Depends(me),s:Session=Depends(db)): return 
 @app.get("/api/v1/findings")
 def findings(u:User=Depends(me),s:Session=Depends(db)):
     return [serialize_finding(f) for f in s.scalars(select(Finding).join(Scan).where(Scan.user_id==u.id))]
+@app.get("/api/v1/security/owasp-top-10")
+def owasp_top_10(u:User=Depends(me),s:Session=Depends(db)):
+    user_findings=list(s.scalars(select(Finding).join(Scan).where(Scan.user_id==u.id)))
+    return owasp_summary(f.rule_id for f in user_findings)
+@app.get("/api/v1/scans/{scan_id}/owasp")
+def scan_owasp(scan_id:str,u:User=Depends(me),s:Session=Depends(db)):
+    scan=s.scalar(select(Scan).where(Scan.id==scan_id,Scan.user_id==u.id))
+    if not scan: raise HTTPException(404,"Scan not found")
+    scan_findings=list(s.scalars(select(Finding).where(Finding.scan_id==scan.id)))
+    return owasp_summary(f.rule_id for f in scan_findings)
 @app.post("/api/v1/findings/{finding_id}/generate-fix")
 async def generate_fix(finding_id:str,data:FixRequest,u:User=Depends(me),s:Session=Depends(db)):
     finding=s.scalar(select(Finding).join(Scan).where(Finding.id==finding_id,Scan.user_id==u.id))
@@ -466,7 +502,7 @@ def verify_working_copy(scan_id:str,u:User=Depends(me),s:Session=Depends(db)):
     files=working_files(scan,s);remaining=[]
     for path,content in files.items():
         language,signals=analyze_source(path,content,"auto")
-        remaining.extend({"file_path":path,"rule_id":signal.rule_id,"title":signal.title,"severity":signal.severity,"line":signal.line,"category":signal.category} for signal in signals)
+        remaining.extend({"file_path":path,"rule_id":signal.rule_id,"title":signal.title,"severity":signal.severity,"line":signal.line,"category":signal.category,"owasp":owasp_for_rule(signal.rule_id)} for signal in signals)
     applied=list(s.scalars(select(FixProposal).where(FixProposal.scan_id==scan.id,FixProposal.status=="APPLIED")))
     unresolved={(item["file_path"],item["rule_id"]) for item in remaining}
     for proposal in applied:
@@ -482,7 +518,7 @@ def decision(finding_id:str,action:Literal["accept","dismiss","escalate","remedi
 @app.get("/api/v1/dashboard")
 def dashboard(u:User=Depends(me),s:Session=Depends(db)):
     scans_count=s.scalar(select(func.count()).select_from(Scan).where(Scan.user_id==u.id)) or 0; fs=list(s.scalars(select(Finding).join(Scan).where(Scan.user_id==u.id))); projects_count=s.scalar(select(func.count()).select_from(Project).where(Project.user_id==u.id)) or 0
-    return {"scans":scans_count,"projects":projects_count,"open":sum(f.status=="OPEN" for f in fs),"high_risk":sum(f.severity in {"high","critical"} and f.status=="OPEN" for f in fs),"reviewed":sum(f.status!="OPEN" for f in fs),"severity":{x:sum(f.severity==x for f in fs) for x in ["critical","high","medium","low","info"]},"recent":[{"action":x.action,"created_at":x.created_at,"rationale":x.rationale} for x in s.scalars(select(AuditLog).where(AuditLog.user_id==u.id).order_by(AuditLog.created_at.desc()).limit(8))]}
+    return {"scans":scans_count,"projects":projects_count,"open":sum(f.status=="OPEN" for f in fs),"high_risk":sum(f.severity in {"high","critical"} and f.status=="OPEN" for f in fs),"reviewed":sum(f.status!="OPEN" for f in fs),"severity":{x:sum(f.severity==x for f in fs) for x in ["critical","high","medium","low","info"]},"recent":[{"action":x.action,"created_at":x.created_at,"rationale":x.rationale} for x in s.scalars(select(AuditLog).where(AuditLog.user_id==u.id).order_by(AuditLog.created_at.desc()).limit(8))],"owasp":owasp_summary(f.rule_id for f in fs)}
 @app.get("/api/v1/audit")
 def audit(u:User=Depends(me),s:Session=Depends(db)): return [{"id":x.id,"action":x.action,"scan_id":x.scan_id,"finding_id":x.finding_id,"rationale":x.rationale,"created_at":x.created_at} for x in s.scalars(select(AuditLog).where(AuditLog.user_id==u.id).order_by(AuditLog.created_at.desc()))]
 @app.post("/api/v1/ai/explain-finding")
@@ -502,4 +538,4 @@ def ask(data:Ask,u:User=Depends(me),s:Session=Depends(db)):
     x=s.scalar(select(Scan).where(Scan.id==data.scan_id,Scan.user_id==u.id))
     if not x: raise HTTPException(404,"Scan not found")
     fs=list(s.scalars(select(Finding).where(Finding.scan_id==x.id)))
-    return {"summary":"This response is limited to static evidence from the current scan.","evidence":[{"title":f.title,"line":f.line,"rule_id":f.rule_id} for f in fs],"recommended_approach":"Address high-severity findings first and record a rationale for each decision.","limitations":"No runtime execution, dependency resolution, or unsubmitted code was analysed."}
+    return {"summary":"This response is limited to static evidence from the current scan.","evidence":[{"title":f.title,"line":f.line,"rule_id":f.rule_id,"owasp":owasp_for_rule(f.rule_id)} for f in fs],"recommended_approach":"Address high-severity findings first and record a rationale for each decision.","limitations":"No runtime execution, dependency resolution, or unsubmitted code was analysed."}

@@ -32,6 +32,8 @@ def test_upload_scan_fix_verify_download(client, auth):
     secret_finding = next(item for item in scan["findings"] if item["rule_id"] == "GEN-HARDCODED-SECRET")
     assert "a-secret-value-123" not in secret_finding["excerpt"]
     eval_finding = next(item for item in scan["findings"] if item["rule_id"] == "PY-UNSAFE-EVAL")
+    assert eval_finding["owasp"]["category_id"] == "A05:2025"
+    assert secret_finding["owasp"]["category_id"] == "A07:2025"
 
     proposal_response = client.post(f"/api/v1/findings/{eval_finding['id']}/generate-fix", headers=auth, json={"use_ai": True})
     assert proposal_response.status_code == 200

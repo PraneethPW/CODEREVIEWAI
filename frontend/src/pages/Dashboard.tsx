@@ -1,6 +1,6 @@
 import {useEffect, useState} from 'react';
 import {Area, AreaChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis} from 'recharts';
-import {Activity, ArrowRight, CheckCircle2, Database, FileSearch, FolderKanban, Plus, ShieldAlert} from 'lucide-react';
+import {Activity, ArrowRight, CheckCircle2, Database, FileSearch, FolderKanban, Plus, ShieldAlert, ShieldCheck} from 'lucide-react';
 import {Link} from 'react-router-dom';
 import {api} from '../lib/api';
 import {Loading, PageHeader, Shell} from '../components/Shell';
@@ -21,6 +21,7 @@ export function Dashboard() {
       <section className="glass chart-card wide"><div className="module-head"><span>SYS/SCAN_TREND</span><b>DATABASE</b></div><h3>Scan progression</h3><ResponsiveContainer width="100%" height={230}><AreaChart data={trend}><defs><linearGradient id="scanFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#a855f7" stopOpacity={.7}/><stop offset="1" stopColor="#a855f7" stopOpacity={0}/></linearGradient></defs><XAxis dataKey="name" stroke="#6f6180"/><YAxis stroke="#6f6180"/><Tooltip/><Area type="monotone" dataKey="value" stroke="#c084fc" fill="url(#scanFill)"/></AreaChart></ResponsiveContainer></section>
       <section className="glass activity-card"><div className="module-head"><span>REV/ACTIVITY</span><b>LIVE</b></div><h3>Recent activity</h3>{data.recent.length ? data.recent.map((item:any,index:number)=><p key={index}><Activity/><span><b>{item.action.replaceAll('_',' ')}</b><small>{item.rationale||'System event'}</small></span></p>):<p className="muted">No review decisions yet.</p>}</section>
     </div>}
+    {data.owasp&&<section className="glass owasp-dashboard"><div className="module-head"><span>SEC/OWASP_TOP_10_2025</span><b>{data.owasp.mapped_findings} REAL MAPPINGS</b></div><div className="owasp-dashboard-title"><div><ShieldCheck/><span><small>CATEGORY TELEMETRY</small><h3>OWASP Top 10:2025 evidence map</h3></span></div><p>Static category mapping—not a compliance score.</p></div><div className="owasp-matrix">{data.owasp.categories.map((item:any)=><article className={`${item.coverage} ${item.finding_count?'has-findings':''}`} key={item.category_id}><span>{item.category_id.slice(0,3)}</span><b>{item.coverage==='not_assessed'?'—':item.finding_count}</b><strong>{item.category_name}</strong><small>{item.coverage==='not_assessed'?'NOT ASSESSED':item.finding_count?'MAPPED EVIDENCE':'NO MATCHING EVIDENCE'}</small></article>)}</div><div className="owasp-disclaimer"><ShieldAlert/><span>{data.owasp.disclaimer}</span></div></section>}
     <section className="system-status"><div><Database/><span><small>DATABASE</small><b>CONNECTED</b></span></div><div><Activity/><span><small>STATIC ENGINE</small><b>READY</b></span></div><div><ShieldAlert/><span><small>CODE EXECUTION</small><b>DISABLED</b></span></div><div><CheckCircle2/><span><small>SCANNER</small><b>READY</b></span></div></section>
   </Shell>;
 }

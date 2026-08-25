@@ -5,6 +5,7 @@ import {Archive, ArrowRight, CheckCircle2, Code2, FileCode2, Files, FolderPlus, 
 import {useNavigate} from 'react-router-dom';
 import {api} from '../lib/api';
 import {PageHeader, Shell} from '../components/Shell';
+import type {OwaspSummary} from '../types';
 
 type InputMode = 'paste' | 'file' | 'project' | 'zip';
 const starter = `def calculate_total(items):
@@ -19,6 +20,7 @@ export function NewReview() {
   const navigate = useNavigate();
   const fileInput = useRef<HTMLInputElement>(null);
   const [projects, setProjects] = useState<any[]>([]);
+  const [owasp, setOwasp] = useState<OwaspSummary>();
   const [project, setProject] = useState('');
   const [newProject, setNewProject] = useState('');
   const [mode, setMode] = useState<InputMode>('paste');
@@ -27,7 +29,10 @@ export function NewReview() {
   const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  useEffect(() => {api<any[]>('/projects').then(setProjects);}, []);
+  useEffect(() => {
+    api<any[]>('/projects').then(setProjects);
+    api<OwaspSummary>('/security/owasp-top-10').then(setOwasp);
+  }, []);
 
   const metrics = useMemo(() => {
     if (mode === 'paste' || mode === 'file') return {files: 1, lines: source.split('\n').length, bytes: new Blob([source]).size};
@@ -96,11 +101,11 @@ export function NewReview() {
         {(mode === 'file' || mode === 'project' || mode === 'zip') && <motion.button whileTap={{scale:.98}} className="drop-zone" onClick={()=>fileInput.current?.click()}><UploadCloud/><strong>{mode==='zip'?'Choose a ZIP project':mode==='project'?'Choose source files':'Choose one source file'}</strong><span>{files.length ? `${files.length} item${files.length>1?'s':''} ready` : 'Python · JavaScript · TypeScript · Java · HTML · CSS · JSON · YAML'}</span><input ref={fileInput} hidden type="file" accept={mode==='zip'?'.zip':'.py,.js,.jsx,.ts,.tsx,.java,.html,.css,.json,.yml,.yaml'} multiple={mode==='project'} onChange={e=>chooseFiles(Array.from(e.target.files||[]))}/></motion.button>}
         {(mode === 'paste' || mode === 'file') && <><div className="filename-row"><label>Filename<input value={filename} onChange={e=>setFilename(e.target.value)}/></label><span>A filename is required for language detection.</span></div><Editor height="420px" language={filename.split('.').pop()==='py'?'python':'typescript'} value={source} onChange={value=>setSource(value||'')} theme="vs-dark" options={{minimap:{enabled:true},fontSize:14,lineNumbersMinChars:3,padding:{top:16}}}/></>}
         {(mode === 'project' || mode === 'zip') && files.length>0 && <div className="file-manifest"><div><b>INPUT MANIFEST</b><span>{files.length} upload item{files.length>1?'s':''}</span></div>{files.slice(0,8).map(file=><p key={file.name}><FileCode2/><span>{(file as any).webkitRelativePath||file.name}</span><small>{Math.ceil(file.size/1024)} KB</small></p>)}{files.length>8&&<small>+ {files.length-8} more files</small>}</div>}
-        <div className="review-config"><span><CheckCircle2/> Syntax validation</span><span><CheckCircle2/> Security patterns</span><span><CheckCircle2/> Quality & complexity</span><span><Sparkles/> Grounded explanation</span></div>
+        <div className="review-config"><span><CheckCircle2/> Syntax validation</span><span><ShieldCheck/> OWASP-mapped security patterns</span><span><CheckCircle2/> Quality & complexity</span><span><Sparkles/> Grounded explanation</span></div>
         {error&&<motion.p initial={{x:-8}} animate={{x:0}} className="error">{error}</motion.p>}
         <button className="cta charge-button" disabled={busy} onClick={run}>{busy?'QUEUING REVIEW…':'RUN CODE REVIEW'} <ArrowRight/></button>
       </section>
-      <aside className="glass review-telemetry"><small>REVIEW CONFIGURATION</small><div className="mini-gauge"><Gauge/><strong>BAL</strong><span>MODE</span></div>{[['SEC/RULE','ACTIVE'],['QUAL/STATIC','ACTIVE'],['COMP/AST','ACTIVE'],['AI/CTX','GROUND ONLY'],['EXEC/CODE','DISABLED']].map(([key,value])=><p key={key}><span>{key}</span><b>{value}</b></p>)}<hr/><small>WHAT HAPPENS NEXT</small>{['Input validated','Language detected','Syntax parsed','Rules evaluated','Evidence ranked','Explanation prepared'].map((item,index)=><div className="next-step" key={item}><i>{String(index+1).padStart(2,'0')}</i>{item}</div>)}</aside>
+      <aside className="glass review-telemetry"><small>REVIEW CONFIGURATION</small><div className="mini-gauge"><Gauge/><strong>BAL</strong><span>MODE</span></div>{[['SEC/RULE','ACTIVE'],['OWASP/2025','MAPPING ACTIVE'],['QUAL/STATIC','ACTIVE'],['COMP/AST','ACTIVE'],['AI/CTX','GROUND ONLY'],['EXEC/CODE','DISABLED']].map(([key,value])=><p key={key}><span>{key}</span><b>{value}</b></p>)}<hr/><small>OWASP TOP 10 / COVERAGE</small><div className="owasp-mini-grid">{owasp?.categories.map(item=><span className={item.coverage} title={`${item.category_name} · ${item.coverage==='not_assessed'?'Context required':'Supported static patterns'}`} key={item.category_id}>{item.category_id.slice(0,3)}<i/></span>)}</div><div className="coverage-note">Supported findings receive OWASP Top 10:2025 classification. This mapping is not a compliance certificate.</div><hr/><small>WHAT HAPPENS NEXT</small>{['Input validated','Language detected','Syntax parsed','Rules evaluated','Evidence ranked','Explanation prepared'].map((item,index)=><div className="next-step" key={item}><i>{String(index+1).padStart(2,'0')}</i>{item}</div>)}</aside>
     </div>
     <AnimatePresence>{busy&&<motion.div className="launch-overlay" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}><div className="launch-core"><i/><i/><Code2/></div><strong>SOURCE ACQUIRED</strong><span>ENTERING ANALYSIS PIPELINE</span></motion.div>}</AnimatePresence>
   </Shell>;
