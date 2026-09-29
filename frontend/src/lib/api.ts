@@ -33,3 +33,25 @@ export async function downloadArtifact(scanId: string) {
   anchor.click();
   URL.revokeObjectURL(url);
 }
+
+export async function downloadScanReport(scanId: string) {
+  const token = localStorage.getItem('cra_token');
+  const response = await fetch(`${API}/scans/${scanId}/report`, {
+    headers: token ? {Authorization: `Bearer ${token}`} : {},
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({detail: 'The PDF report could not be generated.'}));
+    throw new Error(body.detail || 'The PDF report could not be generated.');
+  }
+  const blob = await response.blob();
+  const disposition = response.headers.get('content-disposition') || '';
+  const filename = disposition.match(/filename="?([^";]+)"?/)?.[1] || `code-review-report-${scanId.slice(0, 8)}.pdf`;
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

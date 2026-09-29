@@ -1,8 +1,8 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
 import Editor from '@monaco-editor/react';
 import {AnimatePresence, motion} from 'framer-motion';
-import {AlertTriangle, ArrowRight, Check, CheckCircle2, ChevronRight, Download, FileCode2, Files, RotateCw, ShieldCheck, Sparkles, WandSparkles, X} from 'lucide-react';
-import {api, downloadArtifact} from '../lib/api';
+import {AlertTriangle, ArrowRight, Check, CheckCircle2, ChevronRight, Download, FileCode2, Files, FileText, RotateCw, ShieldCheck, Sparkles, WandSparkles, X} from 'lucide-react';
+import {api, downloadArtifact, downloadScanReport} from '../lib/api';
 import {Loading, PageHeader, Shell} from '../components/Shell';
 import type {Finding, FixProposal, Scan} from '../types';
 import {useParams} from 'react-router-dom';
@@ -25,6 +25,7 @@ export function ScanReview() {
   const [verification, setVerification] = useState<any>();
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [reportError, setReportError] = useState('');
 
   const load = async (keepFinding?: string) => {
     const response = await api<Scan>(`/scans/${id}`); setScan(response);
@@ -42,13 +43,15 @@ export function ScanReview() {
   const generate = async () => {if(!active)return;setBusy('generate');setError('');try{setProposal(await api(`/findings/${active.id}/generate-fix`,{method:'POST',body:JSON.stringify({use_ai:true})}));}catch(caught:any){setError(caught.message);}finally{setBusy('');}};
   const apply = async () => {if(!proposal||!active)return;setBusy('apply');setError('');try{const updated=await api<FixProposal>(`/fixes/${proposal.id}/apply`,{method:'POST'});setProposal(updated);await load(active.id);}catch(caught:any){setError(caught.message);}finally{setBusy('');}};
   const verify = async () => {setBusy('verify');setError('');try{const result:any=await api(`/scans/${id}/verify`,{method:'POST'});setVerification(result);if(proposal&&active&&!result.remaining.some((item:any)=>item.file_path===proposal.file_path&&item.rule_id===active.rule_id))setProposal({...proposal,status:'VERIFIED'});await load(active?.id);}catch(caught:any){setError(caught.message);}finally{setBusy('');}};
+  const downloadReport = async () => {if(!id)return;setBusy('report');setReportError('');try{await downloadScanReport(id);}catch(caught:any){setReportError(caught.message||'The PDF report could not be generated.');}finally{setBusy('');}};
   const decide = async (action:string) => {if(!active||!rationale.trim())return setError('Add a developer rationale before recording a decision.');setBusy(action);try{const updated=await api<Finding>(`/findings/${active.id}/${action}`,{method:'POST',body:JSON.stringify({rationale})});setActive(updated);setScan(current=>current?{...current,findings:current.findings.map(item=>item.id===updated.id?updated:item)}:current);setRationale('');}catch(caught:any){setError(caught.message);}finally{setBusy('');}};
   const visible = useMemo(()=>scan?.findings.filter(item=>filter==='all'||item.severity===filter)||[],[scan,filter]);
   const currentFile = scan?.files.find(file=>file.path===filePath) || scan?.files[0];
   const counts = useMemo(()=>Object.fromEntries(['critical','high','medium','low'].map(severity=>[severity,scan?.findings.filter(item=>item.severity===severity).length||0])),[scan]);
   const mappedFindings = scan?.findings.filter(item=>item.owasp).length || 0;
   if (!scan) return <Shell><Loading label="OPENING EVIDENCE WORKSPACE"/></Shell>;
-  return <Shell><PageHeader kicker={`REVIEW WORKSPACE / ${scan.status}`} title={scan.filename}><div className="workspace-actions"><button onClick={verify} disabled={!!busy}><RotateCw/> {busy==='verify'?'VERIFYING…':'VERIFY WORKING COPY'}</button><button onClick={()=>downloadArtifact(scan.id)}><Download/> DOWNLOAD FIXED</button></div></PageHeader>
+  return <Shell><PageHeader kicker={`REVIEW WORKSPACE / ${scan.status}`} title={scan.filename}><div className="workspace-actions"><button onClick={verify} disabled={!!busy}><RotateCw/> {busy==='verify'?'VERIFYING…':'VERIFY WORKING COPY'}</button><button onClick={()=>downloadArtifact(scan.id)}><Download/> DOWNLOAD FIXED</button><button onClick={downloadReport} disabled={!!busy}><FileText/> {busy==='report'?'GENERATING PDF…':'DOWNLOAD REPORT'}</button></div></PageHeader>
+    {reportError&&<p className="error" role="alert">{reportError}</p>}
     <div className="workspace-telemetry"><span><small>FILES</small><b>{scan.files.length}</b></span><span><small>LINES</small><b>{scan.total_lines}</b></span><span><small>FINDINGS</small><b>{scan.findings.length}</b></span><span><small>OWASP MAPPED</small><b className="cyan-text">{mappedFindings}</b></span><span><small>CRITICAL</small><b className="critical-text">{counts.critical}</b></span><span><small>HIGH</small><b className="high-text">{counts.high}</b></span><span><small>LANGUAGE</small><b>{scan.language}</b></span><span><small>EXECUTION</small><b className="cyan-text">OFF</b></span></div>
     <div className="review-workspace-v2">
       <div className="workspace-mobile-tabs" role="tablist" aria-label="Review workspace views">{(['findings','code','review'] as const).map(tab=><button aria-selected={mobileTab===tab} className={mobileTab===tab?'active':''} onClick={()=>setMobileTab(tab)} key={tab}>{tab}</button>)}</div>

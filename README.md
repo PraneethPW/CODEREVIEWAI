@@ -14,6 +14,7 @@ The product does not connect to source hosts or editors, and it never executes s
 6. Generate a fix proposal, preview the before/after code, and explicitly apply it to a working copy.
 7. Re-run deterministic validators against the working copy.
 8. Download the reviewed file or ZIP artifact.
+9. Download a detailed PDF report with severity totals, finding evidence, source excerpts, remediation guidance, fix proposals, errors, and review history.
 
 ## Supported inputs
 
@@ -41,6 +42,7 @@ flowchart LR
   EVIDENCE --> AI[Optional grounded OpenRouter explanation]
   EVIDENCE --> FIX[User-approved working copy]
   FIX --> VERIFY[Static validator rerun]
+  API --> REPORT[PDF report generation]
   API --> DB[(PostgreSQL or local SQLite)]
 ```
 
@@ -79,6 +81,7 @@ SQLite is the zero-configuration default. Set `DATABASE_URL` to a PostgreSQL con
 - Fixes: `POST /api/v1/findings/{id}/generate-fix`, `POST /api/v1/fixes/{id}/apply`
 - Verification: `POST /api/v1/scans/{id}/verify`
 - Download: `GET /api/v1/scans/{id}/reviewed-file`
+- PDF report: `GET /api/v1/scans/{id}/report`
 - Decisions and audit: `POST /api/v1/findings/{id}/{action}`, `GET /api/v1/audit`
 
 ## Validation
@@ -90,7 +93,7 @@ The automated backend suite covers auth ownership, queued progress, secret redac
 
 ## Railway backend deployment
 
-Create a Railway service with `backend` as its Root Directory. Railway will detect `backend/Dockerfile` and `backend/railway.json`; the container binds to Railway's injected `PORT` and uses `/health` as its deployment healthcheck. Set `DATABASE_URL`, `JWT_SECRET`, `FRONTEND_URL`, and optionally the three `OPENROUTER_*` variables. PostgreSQL URLs using either `postgres://` or `postgresql://` are normalized to SQLAlchemy's Psycopg 3 driver.
+Create a Railway service with `backend` as its Root Directory. Railway will detect `backend/Dockerfile` and `backend/railway.json`; the container binds to Railway's injected `PORT` and uses `/health` as its deployment healthcheck. Set `DATABASE_URL`, `JWT_SECRET`, `FRONTEND_URL`, and optionally the three `OPENROUTER_*` variables. ReportLab is installed from `backend/requirements.txt` for authenticated PDF report downloads. PostgreSQL URLs using either `postgres://` or `postgresql://` are normalized to SQLAlchemy's Psycopg 3 driver.
 
 ## Honest limitations
 

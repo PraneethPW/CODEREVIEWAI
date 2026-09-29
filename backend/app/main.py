@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 import httpx
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.responses import PlainTextResponse, Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -13,6 +13,7 @@ from sqlalchemy import create_engine, String, Text, DateTime, ForeignKey, Intege
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session, relationship, sessionmaker
 from .analysis import analyze_source, owasp_for_rule, owasp_summary
 from .services.ingestion import SourceFile, decode_source, extract_zip, MAX_FILES
+from .services.report import build_scan_report
 
 def utc_now()->datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -446,6 +447,30 @@ def download_reviewed_file(scan_id:str,u:User=Depends(me),s:Session=Depends(db))
         return StreamingResponse(output,media_type="application/zip",headers={"Content-Disposition":'attachment; filename="codereview_fixed.zip"'})
     name="reviewed_"+scan.filename.replace("/","_")
     return PlainTextResponse(next(iter(files.values())),headers={"Content-Disposition":f'attachment; filename="{name}"'})
+@app.get("/api/v1/scans/{scan_id}/report")
+def download_scan_report(scan_id:str,u:User=Depends(me),s:Session=Depends(db)):
+    scan=s.scalar(select(Scan).where(Scan.id==scan_id,Scan.user_id==u.id))
+    if not scan: raise HTTPException(404,"Scan not found")
+    project=s.scalar(select(Project).where(Project.id==scan.project_id,Project.user_id==u.id))
+    scan_findings=list(s.scalars(select(Finding).where(Finding.scan_id==scan.id).order_by(Finding.severity,Finding.line)))
+    proposals=[]
+    for item in s.scalars(select(FixProposal).where(FixProposal.scan_id==scan.id,FixProposal.user_id==u.id).order_by(FixProposal.created_at)):
+        proposal=serialize_proposal(item)
+        proposal["confidence_note"]=redact_text(proposal["confidence_note"])
+        proposals.append(proposal)
+    audit_logs=[{"action":item.action,"finding_id":item.finding_id,"rationale":redact_text(item.rationale or ""),"created_at":item.created_at} for item in s.scalars(select(AuditLog).where(AuditLog.user_id==u.id,AuditLog.scan_id==scan.id).order_by(AuditLog.created_at))]
+    events=[{"stage":item.stage,"status":item.status,"message":redact_text(item.message),"created_at":item.created_at} for item in s.scalars(select(ScanEvent).where(ScanEvent.scan_id==scan.id,ScanEvent.user_id==u.id).order_by(ScanEvent.sequence))]
+    pdf=build_scan_report(
+        scan={"id":scan.id,"status":scan.status,"filename":redact_text(scan.filename),"language":scan.language,"review_mode":scan.review_mode,"input_type":scan.input_type,"created_at":scan.created_at,"completed_at":scan.completed_at},
+        project_name=redact_text(project.name) if project else "Project",
+        files=working_files(scan,s),
+        findings=[serialize_finding(item) for item in scan_findings],
+        proposals=proposals,
+        audit_logs=audit_logs,
+        events=events,
+    )
+    filename=f"code-review-report-{scan.id[:8]}.pdf"
+    return Response(content=pdf,media_type="application/pdf",headers={"Content-Disposition":f'attachment; filename="{filename}"',"Cache-Control":"private, no-store"})
 @app.get("/api/v1/scans/{scan_id}/status")
 def scan_status(scan_id:str,u:User=Depends(me),s:Session=Depends(db)):
     x=s.scalar(select(Scan).where(Scan.id==scan_id,Scan.user_id==u.id))
